@@ -1,0 +1,507 @@
+---
+title: "Data Analyst for Body Fat: Measuring body fat percentage"
+author: "Xiuxiao Hughes"
+date: "3/17/2023"
+output:
+  html_document:
+    df_print: paged
+    number_sections: yes
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H')
+```
+
+
+
+# Abstract 
+
+This project is to find a convenient way to measure a person's body fat percentage. We used a data set that contains measurement of body parts. A linear regression model and a ridge regression model were fitted. We found out that a linear regression model is better fit for this project. The finding is we can predict the body fat percentage by the size of abdomen, wrist, weight, biceps and height. 
+
+
+# Introduction
+
+According to "Obesity Facts in America" from [Healthline](https://www.healthline.com/health/obesity-facts#1.-More-than-one-third-of-adults-in-the-United-States-are-obese), in America, the obesity rate for children aged 2 to 19 is around 17%. The obesity rate for adults is over 36.5%. People who are obese have a high risk for many types of diseases. These diseases include diabetes, heart disease, stroke, etc. Because of this, knowing body fat percentage in your body is helpful for evaluating your overall health. One way to know your body fat percentage is by going to a clinic or a hospital, but this is not convenient. It would be great if there was a way to measure body fat conveniently. The goal for this project is to find an easier way to measure body fat percentage. 
+
+There are a few questions of interest for this project: 
+
+1.	Does a person who is heavy and tall tend to have a higher body fat percentage? 
+
+2.	How well can measuring the size of the body (neck, chest, abdomen, hip, thigh, knee, ankle, biceps, forearm, and wrist) predict the bodyfat percentage? 
+
+3.	What age range has the highest body fat percentage?
+
+ 
+# Background 
+
+The data Bodyfat contains 16 variables. They are Density determined from underwater weighing, Percent body fat from Siri's (1956) equation, Age (years), Weight (lbs), Height (inches), Neck circumference (cm), Chest circumference (cm), Abdomen 2 circumference (cm), Hip circumference (cm), Thigh circumference (cm), Knee circumference (cm), Ankle circumference (cm), Biceps (extended) circumference (cm), Forearm circumference (cm), Wrist circumference (cm). 
+
+Quantitative variables contain bodyfat.p, age, weight, height, neck, chest, abdomen2, hip, thigh, knee, ankle, biceps, forearm and wrist. There is no qualitative variable. 
+
+The Siri’s equation is percentage of body fat = (495 / body density) - 450, so the Density variable will not be used as one of the predictors.
+
+
+# Descriptive analysis 
+
+```{r, echo=FALSE}
+bodyfat <- read.table("bodyfat.txt", quote="\"", comment.char="")
+colnames(bodyfat) <- c('density','bodyfat.p','age','weight','height','neck','chest','abdomen2','hip', 'thigh', 'knee','ankle','biceps', 'forearm', 'wrist')
+summary(bodyfat)
+bodyfat<-bodyfat[,-1]
+```
+**Missing value**
+
+Based on the summary, we can see that the data set does not contact any missing value. 
+
+**A person with 0% body fat**
+
+We see an unusual value of a person who has 0% body fat. According to Dr. Sutterer from [Men's health](https://www.menshealth.com/health/a33247811/ronnie-coleman-body-fat/), it is not possible to have 0% body fat in a human's body. A person who with 0% body fat can not function normally.Having too little body fat can cause nutritional deficiencies, electrolyte imbalances, and organ malfunction. Men need a minimum of 3 percent body fat, and women need at least 12 percent for proper bodily function, according to Garber from [abcNEWS](https://abcnews.go.com/Health/legendary-bodybuilder-died-body-fat-lives/story?id=29899438#:~:text=%E2%80%9CHaving%20too%20little%20can%20lead,to%20function%20properly%2C%20Garber%20said.). Below that, serious health problems may arise when body conditions fall below a certain level, possibly leading to death due to organ failure.
+
+Base on the histogram below, because this data point with 0% body fat is not an outlier, we will not remove the point.
+
+**Histogram of the respone variable Bodyfat.p**
+
+```{r, echo=FALSE}
+hist(bodyfat$bodyfat.p, main = "Body fat %", xlab="body fat %")
+```
+ 
+From the histogram of the variable bodyfat.p, because it is right skewed, a box-cox procedure may require. 
+
+**Box-cox procedure**
+
+```{r, echo=FALSE}
+library(MASS)
+bodyfat.box<-bodyfat$bodyfat.p+0.01 ## add a constant to make all value of bodyfat.p positive
+bc<-boxcox(bodyfat.box~age+weight+height+neck+chest+abdomen2+hip+thigh+knee+ankle+biceps+forearm+wrist, data = bodyfat)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+
+Lambda is 0.989899 which is close to 1. From the plot above,we can see that 1 is inside of the 95% confident interval, therefore, transformation for response variable is not necessary.
+
+**Histograms of the predictor variables**
+
+```{r, echo=FALSE}
+par(mfrow = c(4, 4))
+
+hist(bodyfat$age, main="age", xlab="")
+hist(bodyfat$weight, main="weight", xlab="")
+hist(bodyfat$height, main="height", xlab="")
+hist(bodyfat$neck, main="neck", xlab="")
+hist(bodyfat$chest, main="chest", xlab="")
+hist(bodyfat$abdomen2, main="abdomen2", xlab="")
+hist(bodyfat$hip, main="hip", xlab="")
+hist(bodyfat$thigh,main="thigh", xlab="")
+hist(bodyfat$knee,main="knee", xlab="")
+hist(bodyfat$ankle,main="ankle", xlab="")
+hist(bodyfat$biceps,main="biceps", xlab="")
+hist(bodyfat$forearm,main="forearm", xlab="")
+hist(bodyfat$wrist, main="wrist", xlab="")
+```
+
+Base on the histograms, we don't see any obvious outlier. 
+
+Distribution for each predictor variable:
+
+Normal distribution: age, neck, wrist and forearm
+
+Right skewed: weight, chest, thigh, knee, ankle, biceps, abdomen2 and hip
+
+Left skewed: height
+
+**Training set and validation set**
+
+The whole data set is separated into two groups. One group that uses as a training data contains 70% of the data. The other group that uses as a validation data set contains 30% of the data. The side-by-side box plots show that these two data sets are similar to each other. 
+
+```{r,echo=FALSE}
+set.seed(100)
+n <- nrow(bodyfat)*0.70
+ind <- sample(nrow(bodyfat), n, replace=FALSE)
+train <- bodyfat[ind, ] #training set 70%
+valid <- bodyfat[-ind, ] #validation/test set 30%
+
+## Draw side-by-side box plot to see if the training and validation set are similar
+par(mfrow=c(3,5))
+for (col_name in c('bodyfat.p', 'age',
+'weight', 'height', 'neck', 'chest', 'abdomen2','hip','thigh','knee','ankle','biceps','forearm','wrist')){
+boxplot(train[, col_name],valid[, col_name],main=col_name,names=c('train','valid'))
+}
+```
+
+
+**Scatter plot matrax and correlation matrix**
+
+```{r, echo=FALSE}
+panel.cor <- function(x, y) {
+    par(usr = c(0, 1, 0, 1))
+    r <- round(cor(x, y, use = "complete.obs"), 2)
+    txt <- paste0("r = ", r)
+    cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+pairs(~bodyfat.p++age+weight+height+neck+chest+abdomen2+hip+thigh+knee+ankle+biceps+forearm+wrist, data = train, lower.panel = panel.cor)
+
+##cor(train)
+```
+
+Based on the scatter plot matrix, there is some linear relation between response variable bodyfat.p and weight, neck, abdomen2, hip, thigh, knee, biceps, forearm and wrist.
+
+There is no obvious linear relation between bodyfat.p and age, height and ankle.
+
+Some X variables are highly correlated to each other.  The correlation between weight and neck is 0.83567571, weight and chest is 0.90083203, weight and abdomen2 is 0.90014657, weight and hip is 0.95276955, weight and thigh is 0.88541527, weight and knee is 0.86589619, weight and biceps is 0.84100793, chest and abdomen2 is 0.9219589, chest and hip is 0.8368452, abdomen2 and hip is 0.8819369, hips and thigh is 0.9079775. 
+
+**Multicollinearity**
+
+Checking VIFs(variance inflation factors) to see if which predictor variables are highly correlated with each other.
+
+
+```{r,echo=FALSE}
+diag(solve(cor(train[,c("age","weight","height","neck","chest","abdomen2","hip","thigh","knee","ankle","biceps","forearm","wrist")])))
+```
+
+Some of the VIFs are larger than 10, indicating multicollinearity among variable weight, chest, abdomen2 and hip.  
+
+# Inferential analysis 
+
+**Assumptions checking**
+
+All required assumptions have to be met before fitting the model. The assumptions are as follow:
+
+* No missing values (The summary tables above shows the data set has no missing value.)
+* No influence outliers.
+* The populations from which the samples are obtained must be normally distributed.
+* Observations for within and between groups must be independent.
+* The variances among populations must be equal.
+
+**Outliers and Leverage** 
+
+***Outlying Y observations***
+
+```{r,echo=FALSE}
+
+model<-lm(bodyfat.p~+age+weight+height+neck+chest+abdomen2+hip+thigh+knee+ankle+biceps+forearm+wrist, data = train)
+## Outlying Y observations
+
+## studentized deleted residuals
+library(MASS)
+stu.res.del <- studres(model)
+head(sort(abs(stu.res.del), decreasing = TRUE))
+
+##Bonferroni’s threshold
+qt(1-.1/(2*176), 176-15-1)
+
+## None of the absolute value of the studentized deleted residuals is larger than Bonferroni’s threshold.
+## So, there is no outlying Y
+```
+
+For α = 0.1, the absolute value of the Bonferroni’s procedure is 3.516987. None of the absolute studentized deleted residuals of Y is larger than 3.516987, so there is no outlying in Y.
+
+
+***Leverage and Outlying in X*** 
+
+```{r, echo=FALSE}
+## Outlying X observations
+
+h <- influence(model)$hat
+p <- 14
+sort(h[which(h > 2 * p/176)], decreasing = TRUE)
+
+## There are 17 values are larger than 2p/n. They are outlying X 
+```
+
+There are 8 leverage values are larger than 0.1587302 which is 2p/n. Their positions (from larger to small) are 42, 31, 39, 175, 41, 206, 106 and 5.  They are all outlying X.
+
+***Influential cases  (cook's distance)***
+
+```{r, echo=FALSE}
+## Cook’s distance
+res <- model$residuals
+mse <- anova(model)["Residuals", 3]
+cook.d <- res^2 * h/(p * mse * (1 - h)^2)
+#sort(cook.d[which(cook.d > 4/(176 - p))], decreasing = TRUE)
+plot(model, which=4)
+```
+
+Based on the calculation of Cook’s distance, 9 values are larger than 0.02463054 (4/(n-p)), but only case 39, has Cook’s distance 0.24746926, stands out as much more influential than other cases. Case 39 need further investigation.
+
+***Investigate case 39***
+
+*Method:*
+
+Building a first-order model (model name: fit.39) without case 39, and then compare the coefficients with the model (model name: model) with all cases. 
+
+
+```{r, echo=FALSE}
+#which(rownames(train) == "39")
+#rbind(train[139, ], bodyfat[39, ])
+fit.39 <- lm(bodyfat.p~age+weight+height+neck+chest+abdomen2+hip+thigh+knee+ankle+biceps+forearm+wrist, data=train, subset = setdiff(rownames(train), "39"))  ##exclude case 39
+rbind(model$coefficients, fit.39$coefficients)
+
+#plot(model$fitted.value, predict(fit.39, train[, c('bodyfat.p','age','weight','height','neck','chest','abdomen2','hip', 'thigh', 'knee','ankle','biceps', 'forearm', 'wrist')]), xlab = "fitted values using all cases", 
+#    ylab = "fitted values without using case 39")  ## compare fitted values
+#abline(0, 1)
+```
+
+The outcome is the coefficients changed. The obvious change is the coefficient of intercept for model without point 39 is -0.2608794, for model with all cases is -6.8529897. The coefficients of other variables also changed. The investigation result for the case 39 is it needs to be removed. 
+
+
+```{r,echo=FALSE}
+#### remove row 39 from training set
+train.new<-train[-139,]
+```
+
+**Normality**
+
+The box-cox proceduce above showed that the response variable doesn't need to be transformed. The distribution is normal.
+
+**Independence**
+
+A Durbin-Watson Test can be used to check if the residuals are independent.
+
+The ***null hypothesis:*** There is no correlation among the residuals.
+
+The ***alternative hypothesis:*** The residuals are auto correlated.
+
+```{r,echo=FALSE, warning=FALSE}
+library(car)
+library(carData)
+fit2<-lm(bodyfat.p~+age+weight+height+neck+chest+abdomen2+hip+thigh+knee+ankle+biceps+forearm+wrist, data = train.new)
+durbinWatsonTest(fit2)
+```
+
+From the output we can see that the test statistic is 2.111929 and the corresponding p-value is 0.442. Since this p-value is larger than 0.05, we failed to reject the null hypothesis and conclude that there is no correlation among the residuals. The residuals are independent.
+
+**Equal variances**
+
+Equal variances can be tested by using the Non-Constant Error Variance (NVC) test. 
+
+The ***null hypothesis:*** The population variances are equal
+
+The ***alternative hypothesis:*** The population variances are not equal
+
+
+```{r,echo=FALSE,warning=FALSE}
+ncvTest(fit2)
+```
+
+Based on the Non-Constant Error Variance (NVC) test result, we failed to reject the $H_0$ and conclude the population variances are equal because the p-value is 0.61152 which is larger than 0.05. 
+
+
+**The plots are using data without point 39**
+
+```{r, echo=FALSE, warning=TRUE}
+model<-lm(bodyfat.p~+age+weight+height+neck+chest+abdomen2+hip+thigh+knee+ankle+biceps+forearm+wrist, data = train.new)
+
+par(mfrow = c(2, 2))
+plot(model)
+```
+
+Linearity: Residual vs fitted value plot does not show any pattern. Assumption of linearity is met.
+
+Constant variance: The expected value of the residuals is approximately 0, and the variance is approximately constant. Assumption of constant variance is met.
+
+Normality: QQ plot looks like a straight line. Assumption of normality is met.
+
+
+# Sensitivity analysis 
+
+**Model fitting**
+
+We are going to fit two models, and then choose the better model as the final model:
+
+1. Linear regression: $Y = X \beta + \epsilon$ and $\hat \beta = (X^{\top}X)^{-1}X^{\top}Y$
+
+2. Ridge regression: $Y_{\lambda}= X \beta_{\lambda}$ and $\hat \beta_{\lambda}=(X^{\top}X+\lambda I)^{-1}X^{\top}Y$
+
+**Linear model**
+
+***Stepwise Regression***
+
+Since there is high multicollinearity among variables, forward stepwise procedure will be used for model selection.
+
+*First order model with all predictors* 
+
+```{r, echo=FALSE}
+#Because there is high multicollinearity among the weight, chest, abdomen2 and hip variables. Stepwise regression is going to be use for model selection.
+
+none_mod <- lm(bodyfat.p ~ 1, data = train.new)  ##model with only intercept
+full_mod <- lm(bodyfat.p ~., data = train.new)  ##first order model with all predictors 
+library(MASS)
+
+# Forward stepwise based on AIC:
+step.model<-stepAIC(none_mod, scope = list(upper = full_mod, lower = ~1), direction = "both", 
+    k = 2, trace = FALSE)
+step.model$anova
+
+```
+
+The first “best” model: fit a first-order model with all predictors as a full model, and then use forward stepwise procedure to find the “best” model base on AIC.
+
+The final model (model1) is: bodyfat.p ~ abdomen2 + wrist +  weight + biceps + height. 
+
+
+*First-order and second-order effects for all predictors*
+
+```{r, echo=FALSE}
+
+full_mod2 <- lm(bodyfat.p ~.^2, data = train.new)  
+
+step.model2<-stepAIC(none_mod, scope = list(upper = full_mod2, lower = ~1), direction = "both", 
+    k = 2, trace = FALSE)
+step.model2$anova
+
+```
+
+
+The second “best” model: fit a first-order and second- order effects for all predictors as a full model, and then use forward stepwise procedure to find the “best” model base on AIC.
+
+The final model (model2) is: bodyfat.p ~ prodictors abdomen2+wrist + weight + biceps + height + age + neck + interaction weight and biceps + interaction abdomen2 and neck. 
+
+***Performance evaluation: compare the RMSPE(root mean squared prediction error) values between model1 and model2*** 
+
+We looked at the RMSPE for both the training set and the validation set. We compare the difference and see if we can test which model does a better job. 
+
+```{r,echo=FALSE}
+model.bs1<-lm(bodyfat.p~abdomen2 + wrist + weight + biceps + height, data=train.new)
+model.bs2<-lm(bodyfat.p ~ abdomen2 + wrist + weight + biceps + height + age + 
+    neck + weight:biceps + abdomen2:neck, data=train.new)
+```
+
+```{r, echo=FALSE}
+
+## RMSPE for model 1
+Yh.test.ols=predict(model.bs1, valid)
+par(mfrow=c(1,1))
+c(sqrt(mean((model.bs1$fitted.values-train.new$bodyfat.p)^2)), sqrt(mean((Yh.test.ols-valid$bodyfat.p)^2)))
+```
+
+```{r,echo=FALSE}
+## RMSPE for model2
+
+Yh.test.ols2=predict(model.bs2, valid)
+par(mfrow=c(1,1))
+c(sqrt(mean((model.bs2$fitted.values-train.new$bodyfat.p)^2)), sqrt(mean((Yh.test.ols2-valid$bodyfat.p)^2)))
+```
+
+
+For the root mean squared prediction error (RMSPE), model1 for training data is 4.223362, model1 for validation data is 4.402156; model2 for training data is 4.096879, model2 for validation data is 4.344482. Since the RMSPE values are close to each other, it is hard to tell which model is better.
+
+Moreover, for model1, RMSPE for training set and for validation set are similar, so there is no overfitting in this model. for model2, RMSPE for training set and for validation set are similar, so there is also no overfitting in this model.
+
+***The “Best” Model final decision for linear regression*** 
+
+```{r,echo=FALSE}
+summary(model.bs1)
+summary(model.bs2)
+```
+
+For model1, based on the P-values for each X variable, height is not significant. For model2, based on the P-value for each X variable, intercept, abdomen2, height, age, neck, interaction abdomen2 and neck are not significant.In addition, the R-squared value and adjusted R-squared value for both models are similar. Therefore, we decided the model1 is the better model. 
+
+**Ridge regression**
+
+Fitting a ridge regression and choose $\lambda$ by GCV and evaluating the Performance between the linear regression model and ridge regression.
+
+```{r, echo=FALSE}
+library(MASS)
+lambda.s <- seq(0, 1e-7, 1e-9)
+fat.ridge <- lm.ridge(bodyfat.p~., data=train.new, lambda=lambda.s)
+lambda.GCV <- fat.ridge$lambda[which.min(fat.ridge$GCV)]
+coef.GCV <- fat.ridge$coef[, which.min(fat.ridge$GCV)]
+```
+
+```{r, echo=FALSE}
+X.train=scale(train.new[,1:13], center=fat.ridge$xm,scale=fat.ridge$scales)
+Yh.train = X.train%*%coef.GCV + fat.ridge$ym
+X.test=scale(valid[,1:13], center=fat.ridge$xm,scale=fat.ridge$scales)
+Yh.test = X.test%*%coef.GCV + fat.ridge$ym
+```
+
+```{r,echo=FALSE}
+par(mfrow=c(2,2))
+plot(train.new$bodyfat.p, model.bs1$fitted.values,xlab="Actual values", ylab = "Fitted values", main="OLS: training set")
+abline(0,1, lty=2,col = "red",)
+plot(valid$bodyfat.p, Yh.test.ols, xlab="Actual values", ylab = "Fitted values", main="OLS: testing set")
+abline(0,1, lty=2,col = "red",)
+
+plot(train.new$bodyfat.p, Yh.train,xlim=c(0,50),ylim=c(-40,40), xlab="Actual values", ylab = "Fitted values", main ="Ridge. training")
+abline(0,1, lty=2,col = "red",)
+
+plot(valid$bodyfat.p, Yh.test, xlim=c(0,50),ylim=c(-40,40),xlab="Actual values", ylab = "Fitted values", main ="Ridge. testing")
+abline(0,1,lty=2,col = "red",)
+
+```
+
+If a model fits well, the points on the plot should line up along the red color straight line (slope = 1 ). Obviously, we can tell that the OLS model doing a better job than the ridge model. The points for the ridge model are not at all at the red line. Therefore, the linear regression is a better model. 
+
+```{r,echo=FALSE}
+par(mfrow=c(2,1))
+c(sqrt(mean((model.bs1$fitted.values-train.new$bodyfat.p)^2)), sqrt(mean((Yh.test.ols-valid$bodyfat.p)^2)))
+c(sqrt(mean((Yh.train-train.new$bodyfat.p)^2)), sqrt(mean((Yh.test-valid$bodyfat.p)^2)))
+```
+
+The RMSPE for the ridge regression model are 40.39622 and 42.00466. The RMSPE for the OLS are 4.223362 and 4.402156. Compare the RMSPE, the ridge model has a much larger error. 
+
+According to the Performance for the OLS and Ridge regression, we decided the linear regression model is the best model. 
+
+**Fitting the "Best" model with the whole data set except point 39**
+
+```{r,echo=FALSE}
+bodyfat.new<-bodyfat[-39,]
+final.model<-lm(formula = bodyfat.p ~ abdomen2 + wrist + weight + biceps + 
+    height, data = bodyfat.new)
+summary(final.model)
+```
+
+The final linear regression model is $Bodyfat.p = -23.62233 + 0.93624 * abdomen2 - 1.43766 * wrist -0.10084 * weight + 0.26078 * biceps - 0.11380 * height$
+
+**Use the linear regression model to predict the body fat percentage for the outlier point 39**
+
+Since data point 39 is considered as an outlier, it has been removed from the data set. We wanted to see what the predicted bodyfat percentage is if we use the point 39's measurement. 
+
+```{r,echo=FALSE}
+newdata = data.frame(abdomen2=148.10, wrist=21.4, weight=363.15, biceps=45, height=72.25)
+predict(final.model, newdata, interval="predict") 
+```
+
+The actual bodyfat percentage for point 39 is 35.2%, however, if we use our final linear regression model to predict the bodyfat percentage for point 39, the 95% prediction interval is 41.75% to 60.57%. Obviously, the actual bodyfat percentage is far below 41.75%. 
+
+# Discussion 
+
+The R-square value for the final model is 74.13%. This model explains 74.13% of the body fat percentage in the regression model. The coefficients of abdomen, wrist, weight and biceps are significant. The coefficient of Height in the model is not significant.  
+
+Based on the final model, the goal of finding an easier way to measure body fat percentage was achieved. By measuring the abdomen (cm), waist (cm), weight (lbs), biceps (cm) and height (inches), a person’s body fat percentage can be determined by using the equation: $Bodyfat.p = -23.62233 + 0.93624 * abdomen2 - 1.43766 * wrist -0.10084 * weight + 0.26078 * biceps - 0.11380 * height$
+ 
+Answer the questions of interest:
+
+1.	Does a person who is heavy and tall tend to have a higher body fat percentage? 
+No. There is a negative relationship between body fat percentage and weight. Keeping other variables constant, on average, every one unit increases in weight, there is 0.10084 unit decreases in body fat percentage. 
+There is also a negative relationship between body fat percentage and height. Keeping other variables constant, on average, every one unit increases in height, there is 0.11380 unit decreases in body fat percentage. 
+
+2.	How well can measuring the size of the body (neck, chest, abdomen, hip, thigh, knee, ankle, biceps, forearm, and wrist) predict the body fat percentage? 
+In the final model, abdomen, biceps, wrist can predict body fat percentage significantly. However, neck, chest, hip, thigh, knee, ankle and forearm cannot significantly predict body fat percentage.
+Keeping other variables constant, on average, every one unit increases in abdomen, there is 0.93624 unit increases in body fat percentage; every one unit increases in biceps, there is 0.26078 unit increases in body fat percentage; every one unit increases in wrist, there is 1.43766 unit decreases in bodyfat percentage.
+
+3.	What age range has the highest body fat percentage?
+Based on the model, age cannot tell anything about body fat percentage. The variable age had been eliminated while doing forward stepwise model selection procedure. 
+
+
+# Acknowledgement {-}
+
+# Reference {-}
+
+Tanita Europe B.V. Understanding your measurements - Body Fat Percentage. (n.d.). Retrieved March 25, 2023, from https://tanita.eu/understanding-your-measurements/body-fat-percentage
+
+Healthline. (2022, January 24). Obesity Facts: Causes, Risks, and More. Retrieved March 25, 2023, from https://www.healthline.com/health/obesity-facts#1.-More-than-one-third-of-adults-in-the-United-States-are-obese
+
+Mackenzie, B. (n.d.). Siri Equation for Body Density. Topend Sports. Retrieved March 25, 2023, from https://www.topendsports.com/testing/siri-equation.htm
+
+Men's Health. (2020, July 22). Ronnie Coleman Says He Now Has No Feeling From the Waist Down. Retrieved March 25, 2023, from https://www.menshealth.com/health/a33247811/ronnie-coleman-body-fat/
+
+ABC News. (2015, April 8). Legendary Bodybuilder Who Died of Bodybuilding Diet Lives On in Graphic Photos. Retrieved March 25, 2023, from https://abcnews.go.com/Health/legendary-bodybuilder-died-body-fat-lives/story?id=29899438#
+
+
+# Session info {-}
+
+```{r}
+sessionInfo()
+```
